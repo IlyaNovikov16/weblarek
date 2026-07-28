@@ -1,12 +1,11 @@
 import './scss/styles.scss';
-import './scss/styles.scss';
 import { API_URL, CDN_URL } from './utils/constants';
 import { apiProducts } from './utils/data';
 import { Api } from './components/base/Api';
-import { WebLarekApi } from './components/base/WebLarekApi';
-import { CatalogModel } from './components/base/models/CatalogModel';
-import { BasketModel } from './components/base/models/BasketModel';
-import { BuyerModel } from './components/base/models/BuyerModel';
+import { WebLarekApi } from './components/WebLarekApi';
+import { CatalogModel } from './components/models/CatalogModel';
+import { BasketModel } from './components/models/BasketModel';
+import { BuyerModel } from './components/models/BuyerModel';
 
 
 const catalog = new CatalogModel();
@@ -38,14 +37,18 @@ console.log('13. Ошибки после полного заполнения:', 
 buyer.clearData();
 console.log('14. Данные покупателя после очистки:', buyer.getData());
 
-
 const api = new Api(API_URL);
-const webLarekApi = new WebLarekApi(CDN_URL, api);
+const webLarekApi = new WebLarekApi(api);
 
 webLarekApi
   .getProductList()
   .then((data) => {
-    catalog.setItems(data.items);
+    const itemsWithCdn = data.items.map((item) => ({
+      ...item,
+      image: CDN_URL + item.image,
+    }));
+
+    catalog.setItems(itemsWithCdn);
     console.log('15. Каталог товаров, загруженный с реального сервера:', catalog.getItems());
   })
   .catch((err) => {
