@@ -1,4 +1,5 @@
 import { IBuyer, TPayment, TBuyerErrors } from '../../types';
+import { IEvents } from '../base/Events';
 
 export class BuyerModel {
   private payment: TPayment;
@@ -6,7 +7,7 @@ export class BuyerModel {
   private email: string;
   private phone: string;
 
-  constructor() {
+  constructor(protected events: IEvents) {
     this.payment = '';
     this.address = '';
     this.email = '';
@@ -18,6 +19,9 @@ export class BuyerModel {
     if (data.address !== undefined) this.address = data.address;
     if (data.email !== undefined) this.email = data.email;
     if (data.phone !== undefined) this.phone = data.phone;
+
+    // Извещаем о том, что данные покупателя изменились
+    this.events.emit('buyer:changed', this.getData());
   }
 
   getData(): IBuyer {
@@ -34,6 +38,7 @@ export class BuyerModel {
     this.address = '';
     this.email = '';
     this.phone = '';
+    this.events.emit('buyer:changed', this.getData());
   }
 
   validate(): TBuyerErrors {
