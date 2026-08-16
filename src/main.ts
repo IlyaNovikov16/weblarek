@@ -1,5 +1,6 @@
-// @ts-ignore
+
 import './scss/styles.scss';
+
 import { WebLarekApi } from './components/WebLarekApi';
 import { API_URL, CDN_URL } from './utils/constants';
 import { EventEmitter } from './components/base/Events';
@@ -8,7 +9,9 @@ import { BuyerModel } from './components/models/BuyerModel';
 import { CatalogModel } from './components/models/CatalogModel';
 import { Header } from './components/view/Header';
 import { Catalog } from './components/view/Catalog';
-import { Card } from './components/view/Card';
+import { CardCatalog } from './components/view/CardCatalog';
+import { CardPreview } from './components/view/CardPreview';
+import { CardBasket } from './components/view/CardBasket';
 import { Modal } from './components/view/Modal';
 import { Basket } from './components/view/Basket';
 import { OrderForm } from './components/view/OrderForm';
@@ -28,9 +31,9 @@ const orderTemplate = ensureElement<HTMLTemplateElement>('#order');
 const contactsTemplate = ensureElement<HTMLTemplateElement>('#contacts');
 const successTemplate = ensureElement<HTMLTemplateElement>('#success');
 
-const catalogModel = new (CatalogModel as any)(events);
-const basketModel = new (BasketModel as any)(events);
-const buyerModel = new (BuyerModel as any)(events);
+const catalogModel = new CatalogModel(events);
+const basketModel = new BasketModel(events);
+const buyerModel = new BuyerModel(events);
 
 const header = new Header(ensureElement<HTMLElement>('.header'), events);
 const catalog = new Catalog(ensureElement<HTMLElement>('.gallery'));
@@ -40,7 +43,7 @@ const basket = new Basket(cloneTemplate(basketTemplate), events);
 const order = new OrderForm(cloneTemplate(orderTemplate), events);
 const contacts = new ContactsForm(cloneTemplate(contactsTemplate), events);
 
-const cardPreview = new (Card as any)(cloneTemplate(cardPreviewTemplate), {
+const cardPreview = new CardPreview(cloneTemplate(cardPreviewTemplate), {
   onClick: () => events.emit('card:toggleBasket'),
 });
 
@@ -49,9 +52,8 @@ const success = new Success(cloneTemplate(successTemplate), {
 });
 
 events.on('items:changed', () => {
-  const items = catalogModel.items || catalogModel.catalog || [];
-  catalog.catalog = items.map((item: IProduct) => {
-    const card = new (Card as any)(cloneTemplate(cardCatalogTemplate), {
+  catalog.catalog = catalogModel.getItems().map((item: IProduct) => {
+    const card = new CardCatalog(cloneTemplate(cardCatalogTemplate), {
       onClick: () => events.emit('card:select', item),
     });
     return card.render(item);
@@ -63,41 +65,42 @@ events.on('card:select', (item: IProduct) => {
 });
 
 events.on('preview:changed', (item: IProduct) => {
-  const inBasket = basketModel.inBasket ? basketModel.inBasket(item.id) : false;
-  (cardPreview as any).buttonText = inBasket ? 'Удалить из корзины' : 'В корзину';
+  const inBasket = basketModel.inBasket(item.id);
+  cardPreview.buttonText = inBasket ? 'Удалить из корзины' : 'В корзину';
+  cardPreview.buttonDisabled = item.price === null;
   modal.render({ content: cardPreview.render(item) });
   modal.open();
 });
 
 events.on('card:toggleBasket', () => {
-  const item = catalogModel.preview;
-  if (!item) return;
+  const item = catalogModel.getPreview();
+  if (!item || item.price === null) return;
 
-  const inBasket = basketModel.inBasket ? basketModel.inBasket(item.id) : false;
+  const inBasket = basketModel.inBasket(item.id);
   if (inBasket) {
-    if (basketModel.remove) basketModel.remove(item.id);
-    else if (basketModel.removeFromBasket) basketModel.removeFromBasket(item.id);
+    basketModel.remove(item.id);
   } else {
-    if (basketModel.add) basketModel.add(item);
-    else if (basketModel.addToBasket) basketModel.addToBasket(item);
+    basketModel.add(item);
   }
   modal.close();
 });
 
 events.on('basket:change', () => {
-  const items = basketModel.items || [];
-  header.counter = items.length;
+  const items = basketModel.getItems();
+  header.counter = basketModel.getCount();
+
   basket.items = items.map((item: IProduct, index: number) => {
-    const card = new (Card as any)(cloneTemplate(cardBasketTemplate), {
-      onClick: () => {
-        if (basketModel.remove) basketModel.remove(item.id);
-        else if (basketModel.removeFromBasket) basketModel.removeFromBasket(item.id);
-      },
+    const card = new CardBasket(cloneTemplate(cardBasketTemplate), {
+      onClick: () => basketModel.remove(item.id),
     });
-    (card as any).index = index + 1;
-    return card.render(item);
+    return card.render({
+      title: item.title,
+      price: item.price,
+      index: index + 1,
+    });
   });
-  basket.total = basketModel.getTotal ? basketModel.getTotal() : 0;
+
+  basket.total = basketModel.getTotal();
   basket.disabled = items.length === 0;
 });
 
@@ -107,28 +110,28 @@ events.on('basket:open', () => {
 });
 
 events.on('order:open', () => {
+  buyerModel.clearData();
   modal.render({
     content: order.render(),
   });
 });
 
-events.on('formErrors:change', (errors: Partial<IOrderForm>) => {
-  const { payment, address, email, phone } = errors;
-  order.valid = !payment && !address;
-  order.errors = Object.values({ payment, address }).filter(Boolean).join('; ');
-
-  contacts.valid = !email && !phone;
-  contacts.errors = Object.values({ phone, email }).filter(Boolean).join('; ');
-});
-
 events.on(/^order\..*:change/, (data: { field: keyof IOrderForm; value: string }) => {
-  if (buyerModel.setData) buyerModel.setData(data.field, data.value);
-  else if (buyerModel.setOrderField) buyerModel.setOrderField(data.field, data.value);
+  buyerModel.setData({ [data.field]: data.value });
 });
 
 events.on(/^contacts\..*:change/, (data: { field: keyof IOrderForm; value: string }) => {
-  if (buyerModel.setData) buyerModel.setData(data.field, data.value);
-  else if (buyerModel.setOrderField) buyerModel.setOrderField(data.field, data.value);
+  buyerModel.setData({ [data.field]: data.value });
+});
+
+events.on('buyer:change', () => {
+  const errors = buyerModel.validate();
+
+  order.valid = !errors.payment && !errors.address;
+  order.errors = [errors.payment, errors.address].filter(Boolean).join('; ');
+
+  contacts.valid = !errors.email && !errors.phone;
+  contacts.errors = [errors.email, errors.phone].filter(Boolean).join('; ');
 });
 
 events.on('order:submit', () => {
@@ -138,21 +141,21 @@ events.on('order:submit', () => {
 });
 
 events.on('contacts:submit', () => {
-  const buyerData = buyerModel.getData ? buyerModel.getData() : buyerModel.getOrder ? buyerModel.getOrder() : {};
-  const items = (basketModel.items || []).map((item: IProduct) => item.id);
-  const total = basketModel.getTotal ? basketModel.getTotal() : 0;
+  const buyerData = buyerModel.getData();
+  const items = basketModel.getItems().map((item: IProduct) => item.id);
+  const total = basketModel.getTotal();
 
-  const orderData = {
+  const orderData: IOrder = {
     ...buyerData,
     items,
     total,
   };
 
   api
-    .orderProducts(orderData as IOrder)
-    .then((result: { id: string; total: number }) => {
-      if (basketModel.clear) basketModel.clear();
-      else if (basketModel.clearBasket) basketModel.clearBasket();
+    .orderProducts(orderData)
+    .then((result) => {
+      basketModel.clear();
+      buyerModel.clearData();
       modal.render({ content: success.render({ total: result.total }) });
     })
     .catch(console.error);
@@ -160,8 +163,7 @@ events.on('contacts:submit', () => {
 
 api
   .getProductList()
-  .then((data: { total: number; items: IProduct[] }) => {
-    if (catalogModel.setItems) catalogModel.setItems(data.items);
-    else if (catalogModel.setCatalog) catalogModel.setCatalog(data.items);
+  .then((data) => {
+    catalogModel.setItems(data.items);
   })
   .catch(console.error);
