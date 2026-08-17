@@ -1,4 +1,3 @@
-
 import './scss/styles.scss';
 
 import { WebLarekApi } from './components/WebLarekApi';
@@ -125,6 +124,13 @@ events.on(/^contacts\..*:change/, (data: { field: keyof IOrderForm; value: strin
 });
 
 events.on('buyer:change', () => {
+  const data = buyerModel.getData();
+
+  order.payment = data.payment;
+  order.address = data.address;
+  contacts.email = data.email;
+  contacts.phone = data.phone;
+
   const errors = buyerModel.validate();
 
   order.valid = !errors.payment && !errors.address;
